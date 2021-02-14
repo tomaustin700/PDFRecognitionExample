@@ -1,6 +1,4 @@
 ﻿using ImageRecog.Classes;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
 using System.Net.Http;
@@ -8,6 +6,10 @@ using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Collections.Generic;
+using System.Net.NetworkInformation;
+using System.Diagnostics;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
 
 namespace ImageRecog
 {
@@ -22,17 +24,40 @@ namespace ImageRecog
         static string uriBase = endpoint + "/vision/v3.1/read/analyze";
 
         // Add a local image with text here (png or jpg is OK)
-        static string imageFilePath = @"C:\Users\TomA\Desktop\pdf.pdf";
+        static string imageFilePath = @"C:\Users\Tom\Desktop\pdf.pdf";
+
+        static List<string> _tweets = new List<string>();
 
 
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             // Call the REST API method.
             Console.WriteLine("\nExtracting text...\n");
-            ReadText(imageFilePath).Wait();
+            await ReadText(imageFilePath);
 
-            Console.WriteLine("\nPress Enter to exit...");
-            Console.ReadLine();
+            while (true) // Loop indefinitely
+            {
+                Console.WriteLine("Enter search term:"); // Prompt
+                string term = Console.ReadLine(); // Get string from user
+                if (term == "exit") // Check string
+                {
+                    break;
+                }
+                Console.WriteLine();
+                Console.WriteLine();
+                Console.WriteLine();
+                Console.WriteLine("-------------------------------------------------");
+                var sw = new Stopwatch();
+                sw.Start();
+                var results = _tweets.Where(a => a.ToLower().Contains(term.ToLower()));
+                sw.Stop();
+                Console.WriteLine("FOUND " + results.Count() + " TWEETS in " + (sw.ElapsedTicks / (TimeSpan.TicksPerMillisecond / 1000)) + " MICROSECONDS");
+                Console.WriteLine("-------------------------------------------------");
+                Console.WriteLine();
+                Console.WriteLine();
+                foreach (var tweet in results)
+                    Console.WriteLine(tweet);
+            }
         }
 
         /// <summary>
@@ -122,15 +147,55 @@ namespace ImageRecog
                     return;
                 }
 
-                var test = JsonConvert.DeserializeObject<Root>(contentString);
+                var tempTweets = JsonConvert.DeserializeObject<Root>(contentString).analyzeResult.readResults.SelectMany(a => a.lines)
+                    .Where(a => a.text.Contains(" ")).Select(q => q.text).Distinct().ToList();
 
-                // Display the JSON response.
-                Console.WriteLine("\nResponse:\n\n{0}\n",
-                    JToken.Parse(contentString).ToString());
+                Dictionary<int, string> filtered = new Dictionary<int, string>();
+                int i2 = 0;
+                foreach (var t in tempTweets)
+                {
+                    filtered.Add(i2, t);
+                    i2++;
+                }
+
+                Dictionary<int, string> trimmed = new Dictionary<int, string>();
+                int i3 = 0;
+
+                foreach (var t in tempTweets)
+                {
+                    if (t.Length >= 20)
+                    {
+                        trimmed.Add(i3, t.Substring(0, 20));
+                    }
+                    i3++;
+                }
+
+                var distincted = trimmed.DistinctBy(a => a.Value);
+
+                _tweets = filtered.Where(a => distincted.Select(q => q.Key).Contains(a.Key)).Select(q => q.Value).ToList();
+                 
+
+
+
+
+
             }
             catch (Exception e)
             {
                 Console.WriteLine("\n" + e.Message);
+            }
+        }
+
+        static IEnumerable<TSource> DistinctBy<TSource, TKey>
+    (this IEnumerable<TSource> source, Func<TSource, TKey> keySelector)
+        {
+            HashSet<TKey> seenKeys = new HashSet<TKey>();
+            foreach (TSource element in source)
+            {
+                if (seenKeys.Add(keySelector(element)))
+                {
+                    yield return element;
+                }
             }
         }
 
