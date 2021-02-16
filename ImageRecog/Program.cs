@@ -8,6 +8,7 @@ using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace ImageRecog
 {
@@ -24,15 +25,36 @@ namespace ImageRecog
         // Add a local image with text here (png or jpg is OK)
         static string imageFilePath = @"C:\Users\TomA\Desktop\pdf.pdf";
 
+        static List<string> _tweets;
 
-        static void Main(string[] args)
+
+        static async Task Main(string[] args)
         {
             // Call the REST API method.
             Console.WriteLine("\nExtracting text...\n");
-            ReadText(imageFilePath).Wait();
+            await ReadText(imageFilePath);
 
-            Console.WriteLine("\nPress Enter to exit...");
-            Console.ReadLine();
+            Console.WriteLine("Enter search term");
+
+            while (true)
+            {
+                var sw = new Stopwatch();
+                string term = Console.ReadLine();
+                sw.Start();
+
+                var results = _tweets.Where(a => a.ToLower().Contains(term.ToLower()));
+                sw.Stop();
+
+                Console.WriteLine("Found " + results.Count() + " tweets");
+                Console.WriteLine("Search took " + (sw.ElapsedTicks / (TimeSpan.TicksPerMillisecond / 1000)) + " microseconds");
+                Console.WriteLine("----------------------------------");
+                foreach(var result in results)
+                {
+                    Console.WriteLine(result);
+                }
+            }
+
+
         }
 
         /// <summary>
@@ -122,15 +144,53 @@ namespace ImageRecog
                     return;
                 }
 
-                var test = JsonConvert.DeserializeObject<Root>(contentString);
+                var temp = JsonConvert.DeserializeObject<Root>(contentString).analyzeResult
+                    .readResults.SelectMany(a => a.lines).Where(q => q.text.Contains(" ")).Select(z => z.text).Distinct();
+
+                Dictionary<int, string> filtered = new Dictionary<int, string>();
+                int i2 = 0;
+                foreach (var t in temp)
+                {
+                    filtered.Add(i2, t);
+                    i2++;
+                }
+
+                Dictionary<int, string> trimmed = new Dictionary<int, string>();
+                int i3 = 0;
+                foreach (var t in temp)
+                {
+                    if (t.Length >= 20)
+                    {
+                        trimmed.Add(i3, t.Substring(0, 20));
+                    }
+                    i3++;
+                }
+
+                var distinct = trimmed.DistinctBy(q => q.Value);
+
+                _tweets = filtered.Where(a => distinct.Select(z => z.Key).Contains(a.Key)).Select(z => z.Value).ToList();
+
 
                 // Display the JSON response.
-                Console.WriteLine("\nResponse:\n\n{0}\n",
-                    JToken.Parse(contentString).ToString());
+                //Console.WriteLine("\nResponse:\n\n{0}\n",
+                //    JToken.Parse(contentString).ToString());
             }
             catch (Exception e)
             {
                 Console.WriteLine("\n" + e.Message);
+            }
+        }
+
+        static IEnumerable<TSource> DistinctBy<TSource, TKey>
+ (this IEnumerable<TSource> source, Func<TSource, TKey> keySelector)
+        {
+            HashSet<TKey> seenKeys = new HashSet<TKey>();
+            foreach (TSource element in source)
+            {
+                if (seenKeys.Add(keySelector(element)))
+                {
+                    yield return element;
+                }
             }
         }
 
